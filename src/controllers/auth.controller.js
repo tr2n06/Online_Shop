@@ -34,13 +34,7 @@ export const authController = {
 
     async logout(req, res, next) {
         try {
-            const refreshToken = req.headers.reauthorization?.split(" ")[1];
-
-            if (!refreshToken) {
-                throw new ErrorResponse ("Missing refresh token", 401);
-            }
-
-            await authService.deleteRefreshToken(refreshToken);
+            await authService.logout(req.user.userId);
 
             return res.status(200).json({
                 message: "Logout successfully"

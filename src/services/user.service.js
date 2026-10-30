@@ -1,5 +1,5 @@
 import { userRepo } from "../repositories/user.repo.js";
-import brcypt from "bcrypt";
+import bcrypt from "bcrypt";
 import { ErrorResponse } from "../utils/error.helper.js";
 
 export const userService = {
@@ -15,7 +15,6 @@ export const userService = {
 
     findByEmail: async (email) => {
         const u = await userRepo.findByEmail(email);
-        if (!u) throw new ErrorResponse("User not found", 404);
         return u;
     },
 
@@ -25,16 +24,17 @@ export const userService = {
             throw new ErrorResponse("Email already exists", 422);
         }
 
-        const hash_password = await brcypt.hash(password, 10)
+        const hash_password = await bcrypt.hash(password, 10)
         const userId = await userRepo.create({ name, email, hash_password, phone });
         const u = await userRepo.findById(userId);
         if (!u) throw new ErrorResponse("Failed to create new user", 409);
+
         await userRepo.assignRole(userId, role);
         return u;
     },
 
     update: async (id, { name, phone, password }) => {
-        const hash_password = await brcypt.hash(password, 10)
+        const hash_password = await bcrypt.hash(password, 10)
         const updatedRows = await userRepo.update(id, { name, phone, hash_password });
         if (updatedRows === 0) throw new ErrorResponse("User not found", 404);
         const u = await userRepo.findById(id);
@@ -43,7 +43,7 @@ export const userService = {
     },
 
     updatePassword: async (id, newPassword) => {
-        const hash_password = await brcypt.hash(newPassword, 10)
+        const hash_password = await bcrypt.hash(newPassword, 10)
 
         const updatedRows = await userRepo.updatePassword(id, hash_password);
         if (updatedRows === 0) throw new ErrorResponse("User not found", 404);

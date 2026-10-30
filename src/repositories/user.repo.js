@@ -21,7 +21,7 @@ export const userRepo = {
         );
         return rows[0] || null;
     },
-
+ 
     findByEmail: async (email) => {
         const [rows] = await db.execute(
             `SELECT u.*, ur.role_id
@@ -116,3 +116,6 @@ export const userRepo = {
         return result.affectedRows;
     }
 };
+
+
+

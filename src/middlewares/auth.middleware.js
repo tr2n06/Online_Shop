@@ -28,7 +28,6 @@ export const verifyMiddleware = async (req, res, next) => {
             try {
                 payload = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
             } catch (err1) {
-                await authService.deleteRefreshToken(refreshToken);
                 throw new ErrorResponse("Invalid or expired access token", 401);
             }
 
@@ -37,6 +36,9 @@ export const verifyMiddleware = async (req, res, next) => {
 
             res.setHeader("x-new-access-token", newAccess);
         }
+
+        const isActive = await authService.isActive(payload.userId);
+        if (!isActive) throw new ErrorResponse("Invalid or expired access token", 401);
 
         req.user = payload;
         next();
@@ -50,21 +52,19 @@ export const authorizedMiddleware = (permission_id) => {
     return async (req, res, next) => {
         try {
             const u = req.user;
-            const user_id = req.params.user_id?? req.params.id;
+            const user_id = req.params.userId ?? req.params.id;
 
             if (!u) {
                 throw new ErrorResponse("User not existed", 404);
             }
 
             const needToEquivalent = await authService.isAccepted(
-                u.role_id,
+                u.roleId,
                 permission_id
             );
 
-            if (needToEquivalent && user_id != u.user_id) {
-                const err = new ErrorResponse("Cannot access this function", 403);
-                err.statusCode = 403;
-                throw err;
+            if (needToEquivalent && user_id != u.userId) {
+                throw new ErrorResponse("You don't have permission to access this function", 403);
             }
 
             next();
