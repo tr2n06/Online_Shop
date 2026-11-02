@@ -1,4 +1,4 @@
-import { BadRequestError } from '../utils/error.helper.js';
+import { ErrorResponse } from "../utils/error.helper.js";
 
 export const validate = (schema) => {
     return (req, res, next) => {
@@ -13,7 +13,7 @@ export const validate = (schema) => {
             }));
             
             // Chuyển lỗi 400 sang cho Error Handler xử lý
-            return next(new BadRequestError("Invalid input data", errors));
+            return next(new ErrorResponse("Invalid input data", 400, errors));
         }
         
         // Gán lại req.body bằng dữ liệu đã được làm sạch và ép kiểu bởi Zod
