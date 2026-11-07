@@ -56,6 +56,7 @@ export const orderRepo = {
  
     create: async (data, conn = db) => {
         const { user_id, sum_price, note, address, phone } = data;
+        console.log(data);
         const [result] = await conn.execute(
             `INSERT INTO orders (user_id, sum_price, note, address, phone)
              VALUES (?, ?, ?, ?, ?)`,
@@ -101,9 +102,9 @@ export const orderRepo = {
         return result.affectedRows;
     },
 
-    createOrderItems: async(orderId, items) => {
+    createOrderItems: async(orderId, items, conn = db) => {
         const values = items.map(item => [orderId, item.product_id, item.quantity, item.price]);
-        const [result] = await db.query(
+        const [result] = await conn.query(
             "INSERT INTO order_items (order_id, product_id, quantity, price) VALUES ?",
             [values]
         );

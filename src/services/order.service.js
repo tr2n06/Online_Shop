@@ -4,7 +4,6 @@ import { orderRepo } from "../repositories/order.repo.js";
 import { userRepo } from "../repositories/user.repo.js";
 import { ErrorResponse } from "../utils/error.helper.js";
 
-const conn = await db.getConnection();
 
 export const orderService = {
     findAll: async () => {
@@ -27,63 +26,209 @@ export const orderService = {
         return await orderRepo.findByUserId(userId);
     },
 
+
     create: async (data) => {
+        const conn = await db.getConnection();
+        let committed = false;
+        let transactionStarted = false;
+
         try {
             await conn.beginTransaction();
+            transactionStarted = true;
 
             const { items } = data;
-            let sum_price = 0;
-            for (const i of items) {
-                const product = await productRepo.findById(i.product_id);
-                if (!product) throw new ErrorResponse(`Product with ID ${i.product_id} not found`, 404);
 
-                if (product.state == "INACTIVE") throw new ErrorResponse(`Product: ${product.name} is inactive`, 422);
-                if (product.quantity < i.quantity) throw new ErrorResponse(`Insufficient stock for product ${product.name}`, 422);
-
-                i.price = product.price;
-                sum_price += i.quantity * product.price;
+            if (!Array.isArray(items) || items.length === 0) {
+                throw new ErrorResponse("Order must contain items", 400);
             }
 
-            const orderData = { ...data, sum_price };
-            const orderId = await orderRepo.create(orderData);
-            if (!orderId) throw new ErrorResponse("Failed to create order", 409);
-            await orderRepo.createOrderItems(orderId, items);
+            // Gộp số lượng nếu sản phẩm bị lặp ID
+            const quantities = new Map();
 
-            await productRepo.updateStock(items, conn);
+            for (const item of items) {
+                if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
+                    throw new ErrorResponse("Invalid product quantity", 400);
+                }
+
+                quantities.set(
+                    item.product_id,
+                    (quantities.get(item.product_id) || 0) + item.quantity
+                );
+            }
+
+            const sortedIds = [...quantities.keys()].sort((a, b) => a - b);
+            const orderItems = [];
+            let sum_price = 0;
+
+            for (const productId of sortedIds) {
+                // Khóa dòng sản phẩm trong transaction
+                const [rows] = await conn.execute(
+                    "SELECT * FROM products WHERE id = ? FOR UPDATE",
+                    [productId]
+                );
+
+                const product = rows[0];
+                const quantity = quantities.get(productId);
+
+                if (!product) {
+                    throw new ErrorResponse(
+                        `Product with ID ${productId} not found`,
+                        404
+                    );
+                }
+
+                if (product.state !== "ACTIVE") {
+                    throw new ErrorResponse(
+                        `Product ${product.name} is inactive`,
+                        422
+                    );
+                }
+
+                if (product.quantity < quantity) {
+                    throw new ErrorResponse(
+                        `Insufficient stock for ${product.name}`,
+                        422
+                    );
+                }
+
+                orderItems.push({
+                    product_id: productId,
+                    quantity,
+                    price: product.price
+                });
+
+                sum_price += Number(product.price) * quantity;
+            }
+
+            const orderId = await orderRepo.create(
+                { ...data, sum_price },
+                conn
+            );
+
+            if (!orderId) {
+                throw new ErrorResponse("Failed to create order", 409);
+            }
+
+            await orderRepo.createOrderItems(
+                orderId,
+                orderItems,
+                conn
+            );
+
+            await productRepo.updateStock(orderItems, conn);
 
             await conn.commit();
-            const order = await orderService.findById(orderId);
-            return order;
-        }
-        catch (err) {
-            await conn.rollback();
+            committed = true;
+
+            return await orderService.findById(orderId);
+
+        } catch (err) {
+            if (transactionStarted && !committed) {
+                await conn.rollback();
+            }
             throw err;
-        }
-        finally {
+        } finally {
             conn.release();
         }
     },
 
+
     update: async (id, newO) => {
-        let { state, note, address, phone } = newO;
-        let result = 0;
+        const conn = await db.getConnection();
+        let committed = false;
+        let transactionStarted = false;
 
-        const o = await orderService.findById(id);
-        if (!o) throw ErrorResponse("This order is not found", 404); 
+        try {
+            await conn.beginTransaction();
+            transactionStarted = true;
 
-        if (!state) result = await orderRepo.updateInfo(id, { note, address, phone });
-        else {
-            if (state == "CANCELLED") {
-                if (o.state != "PENDING" && o.state != "PROCESSING") {
-                    throw new ErrorResponse("Only orders in PENDING or PROCESSING state can be cancelled", 422);
+            const { state, note, address, phone } = newO;
+
+            const [rows] = await conn.execute(
+                "SELECT * FROM orders WHERE id = ?",
+                [id]
+            );
+
+            const order = rows[0];
+
+            if (!order) {
+                throw new ErrorResponse("Order not found", 404);
+            }
+
+            if (order.state === "CANCELLED" &&
+                state !== undefined &&
+                state !== "CANCELLED") {
+                throw new ErrorResponse(
+                    "Cancelled orders cannot change state",
+                    422
+                );
+            }
+
+            if (state === "CANCELLED" &&
+                order.state !== "CANCELLED") {
+
+                if (!["PENDING", "PROCESSING"].includes(order.state)) {
+                    throw new ErrorResponse(
+                        "Only PENDING or PROCESSING orders can be cancelled",
+                        422
+                    );
+                }
+
+                const [items] = await conn.execute(
+                    `SELECT product_id, quantity
+                 FROM order_items
+                 WHERE order_id = ?`,
+                    [id]
+                );
+
+                // Hoàn số lượng sản phẩm vào kho
+                for (const item of items) {
+                    const [result] = await conn.execute(
+                        `UPDATE products
+                     SET quantity = quantity + ?
+                     WHERE id = ?`,
+                        [item.quantity, item.product_id]
+                    );
+
+                    if (result.affectedRows === 0) {
+                        throw new ErrorResponse(
+                            `Product ${item.product_id} not found`,
+                            404
+                        );
+                    }
                 }
             }
 
-            result = await orderRepo.updateState(id, state);
-        }
+            const [result] = await conn.execute(
+                `UPDATE orders
+             SET state = ?, note = ?, address = ?, phone = ?
+             WHERE id = ?`,
+                [
+                    state ?? order.state,
+                    note ?? order.note,
+                    address ?? order.address,
+                    phone ?? order.phone,
+                    id
+                ]
+            );
 
-        if (result === 0) throw new ErrorResponse("Order not found", 404);
-        return await orderService.findById(id);
+            if (result.affectedRows === 0) {
+                throw new ErrorResponse("Failed to update order", 409);
+            }
+
+            await conn.commit();
+            committed = true;
+
+            return await orderService.findById(id);
+
+        } catch (err) {
+            if (transactionStarted && !committed) {
+                await conn.rollback();
+            }
+            throw err;
+        } finally {
+            conn.release();
+        }
     },
 
     delete: async (id) => {

@@ -29,7 +29,7 @@ export const authController = {
         }
         catch(err) {
             next(err);
-        }
+        } 
     },
 
     async logout(req, res, next) {

@@ -9,11 +9,12 @@ export const productRepo = {
         return rows;
     },
 
-    findById: async (id) => {
-        const [rows] = await db.execute(
+    findById: async (id, conn = db) => {
+        const [rows] = await conn.execute(
             "SELECT * FROM products WHERE id = ?",
             [id]
         );
+
         return rows[0] || null;
     },
 
@@ -62,15 +63,23 @@ export const productRepo = {
         return result.affectedRows;
     },
 
-    updateStock: async(items, conn = db) => {
+    updateStock: async (items, conn) => {
         for (const i of items) {
             const { product_id, quantity } = i;
+
             const [result] = await conn.execute(
-                "UPDATE products SET quantity = quantity - ? WHERE id = ?",
-                [quantity, product_id]
+                `UPDATE products
+             SET quantity = quantity - ?
+             WHERE id = ?
+               AND quantity >= ?`,
+                [quantity, product_id, quantity]
             );
+
             if (result.affectedRows === 0) {
-                throw new ErrorResponse(`Product with ID ${product_id} not found`, 404);
+                throw new ErrorResponse(
+                    `Insufficient stock or product not found: ${product_id}`,
+                    422
+                );
             }
         }
     },

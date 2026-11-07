@@ -12,8 +12,7 @@ export const validate = (schema) => {
                 message: err.message
             }));
             
-            // Chuyển lỗi 400 sang cho Error Handler xử lý
-            return next(new ErrorResponse("Invalid input data", 400, errors));
+            return next(new ErrorResponse("Invalid input data: " + errors.map(error => error.message).join(', '), 400));
         }
         
         // Gán lại req.body bằng dữ liệu đã được làm sạch và ép kiểu bởi Zod

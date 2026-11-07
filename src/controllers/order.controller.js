@@ -60,6 +60,7 @@ export const orderController = {
     createOrder: async (req, res, next) => {
         try {
             const data = req.body;
+            console.log(data); 
             const o = await orderService.create(data);
             return res.status(201).json(o);
         }
