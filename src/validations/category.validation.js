@@ -6,7 +6,7 @@ export const createCategorySchema = z.object({
     }).min(2, "Name must be at least 2 characters"),
 
     description: z.string().optional()
-});
+}); 
 
 export const updateCategorySchema = z.object({
     name: z.string()

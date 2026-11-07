@@ -6,7 +6,7 @@ export const createOrderSchema = z.object({
     })
         .int("User id must be an integer")
         .positive("User id must be greater than 0"),
-
+ 
     address: z.string({
         error: "Address is required"
     })
@@ -47,9 +47,32 @@ export const updateOrderSchema = z.object({
         {
             error: "Invalid order state"
         }
-    ).optional()
+    ).optional(),
+
+    address: z.string({
+        error: "Address must be a string"
+    })
+        .trim()
+        .min(1, "Address cannot be empty")
+        .optional(),
+
+    phone: z.string({
+        error: "Phone must be a string"
+    })
+        .trim()
+        .min(1, "Phone cannot be empty")
+        .optional(),
+
+    note: z.string()
+        .trim()
+        .nullable()
+        .optional()
 }).refine(
-    data => data.state !== undefined,
+    data =>
+        data.state !== undefined ||
+        data.address !== undefined ||
+        data.phone !== undefined ||
+        data.note !== undefined,
     {
         message: "At least one field must be provided to update",
         path: ["body"]
